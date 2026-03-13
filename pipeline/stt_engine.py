@@ -90,7 +90,17 @@ def transcribe(
         vad_parameters={"min_silence_duration_ms": 300},
     )
 
-    raw_list = list(raw_segments)
+    total_duration = info.duration or 0.0
+    raw_list = []
+    for seg in raw_segments:
+        raw_list.append(seg)
+        if progress_callback and total_duration > 0:
+            pct = int(min(seg.end / total_duration * 100, 99))
+            progress_callback(pct)
+
+    if progress_callback:
+        progress_callback(100)
+
     segments = _split_by_words(raw_list)
 
     return segments, info.language
