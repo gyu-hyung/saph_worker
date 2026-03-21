@@ -3,6 +3,7 @@
 import os
 from abc import ABC, abstractmethod
 from openai import OpenAI
+from anthropic import Anthropic
 
 
 class TranslatorProvider(ABC):
@@ -40,9 +41,16 @@ class OllamaTranslator(TranslatorProvider):
     def analyze_context(self, full_text: str) -> str:
         """Pass 1: 전체 STT 텍스트에서 문맥 요약 + 도메인 키워드를 추출합니다."""
         system = (
-            "You are a translation assistant. Analyze the provided transcript and respond "
-            "with a one-sentence summary and up to 5 domain-specific keywords. "
-            "Format: SUMMARY: <summary>\nKEYWORDS: <kw1>, <kw2>, ..."
+            "You are a translation assistant. Analyze the provided transcript and respond with:\n"
+            "1. A one-sentence summary of the content\n"
+            "2. The genre/style (e.g., sermon, lecture, interview, poetry, casual conversation)\n"
+            "3. The tone/register (e.g., formal, informal, emotional, academic)\n"
+            "4. Up to 5 domain-specific keywords\n\n"
+            "Format:\n"
+            "SUMMARY: <summary>\n"
+            "GENRE: <genre>\n"
+            "TONE: <tone>\n"
+            "KEYWORDS: <kw1>, <kw2>, ..."
         )
         return self._chat(system, full_text[:4000])
 
@@ -52,10 +60,15 @@ class OllamaTranslator(TranslatorProvider):
         lang_name = lang_map.get(target_lang, target_lang)
 
         system = (
-            f"You are a professional subtitle translator. Translate each line into natural {lang_name}. "
+            f"You are an expert subtitle translator specializing in {lang_name}. "
             f"Context about this video:\n{context}\n\n"
             "Rules:\n"
-            "- Translate each line independently, preserving meaning and tone.\n"
+            "- Translate all lines as a coherent whole, maintaining context and flow across lines.\n"
+            "- Produce natural, idiomatic translations — NOT literal word-for-word translations.\n"
+            "- Adapt expressions to sound native in the target language.\n"
+            "- Keep subtitle lines concise and readable.\n"
+            "- Preserve the original tone, emotion, and register (formal/informal).\n"
+            "- For Korean: use polite/formal style (합쇼체 or 해요체) by default.\n"
             "- Output ONLY the translated lines, one per line, in the same order.\n"
             "- Do NOT add explanations, numbering, or extra text."
         )
@@ -95,8 +108,11 @@ class OpenAITranslator(TranslatorProvider):
 
     def analyze_context(self, full_text: str) -> str:
         system = (
-            "Analyze the transcript and respond with: "
-            "SUMMARY: <one sentence>\nKEYWORDS: <kw1>, <kw2>, ..."
+            "Analyze the transcript and respond with:\n"
+            "SUMMARY: <one sentence>\n"
+            "GENRE: <genre/style>\n"
+            "TONE: <tone/register>\n"
+            "KEYWORDS: <kw1>, <kw2>, ..."
         )
         return self._chat(system, full_text[:4000])
 
@@ -105,9 +121,136 @@ class OpenAITranslator(TranslatorProvider):
         lang_name = lang_map.get(target_lang, target_lang)
 
         system = (
-            f"Translate each subtitle line into natural {lang_name}. "
+            f"You are an expert subtitle translator specializing in {lang_name}. "
             f"Context:\n{context}\n\n"
-            "Output ONLY translated lines, one per line, same order, no extra text."
+            "Rules:\n"
+            "- Translate all lines as a coherent whole, maintaining context and flow across lines.\n"
+            "- Produce natural, idiomatic translations — NOT literal word-for-word translations.\n"
+            "- Adapt expressions to sound native in the target language.\n"
+            "- Keep subtitle lines concise and readable.\n"
+            "- Preserve the original tone, emotion, and register (formal/informal).\n"
+            "- For Korean: use polite/formal style (합쇼체 or 해요체) by default.\n"
+            "- Output ONLY translated lines, one per line, same order, no extra text."
+        )
+        numbered = "\n".join(f"{i + 1}. {seg['text']}" for i, seg in enumerate(segments))
+        raw = self._chat(system, numbered)
+
+        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        cleaned = []
+        for line in lines:
+            if line and line[0].isdigit() and ". " in line:
+                cleaned.append(line.split(". ", 1)[1])
+            else:
+                cleaned.append(line)
+
+        if len(cleaned) < len(segments):
+            cleaned += [""] * (len(segments) - len(cleaned))
+
+        return cleaned[: len(segments)]
+
+
+class GeminiTranslator(TranslatorProvider):
+    """Google Gemini API를 사용한 번역 — OpenAI-compatible endpoint 사용."""
+
+    def __init__(self):
+        self.model = os.getenv("GEMINI_MODEL", "models/gemini-2.5-flash")
+        self.client = OpenAI(
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key=os.getenv("GEMINI_API_KEY"),
+        )
+
+    def _chat(self, system: str, user: str) -> str:
+        resp = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            temperature=0.3,
+        )
+        return resp.choices[0].message.content.strip()
+
+    def analyze_context(self, full_text: str) -> str:
+        system = (
+            "Analyze the transcript and respond with:\n"
+            "SUMMARY: <one sentence>\n"
+            "GENRE: <genre/style>\n"
+            "TONE: <tone/register>\n"
+            "KEYWORDS: <kw1>, <kw2>, ..."
+        )
+        return self._chat(system, full_text[:4000])
+
+    def translate(self, segments: list[dict], context: str, target_lang: str) -> list[str]:
+        lang_map = {"ko": "Korean", "en": "English", "ja": "Japanese", "zh": "Chinese"}
+        lang_name = lang_map.get(target_lang, target_lang)
+
+        system = (
+            f"You are an expert subtitle translator specializing in {lang_name}. "
+            f"Context:\n{context}\n\n"
+            "Rules:\n"
+            "- Translate all lines as a coherent whole, maintaining context and flow across lines.\n"
+            "- Produce natural, idiomatic translations — NOT literal word-for-word translations.\n"
+            "- Adapt expressions to sound native in the target language.\n"
+            "- Keep subtitle lines concise and readable.\n"
+            "- Preserve the original tone, emotion, and register (formal/informal).\n"
+            "- For Korean: use polite/formal style (합쇼체 or 해요체) by default.\n"
+            "- Output ONLY translated lines, one per line, same order, no extra text."
+        )
+        numbered = "\n".join(f"{i + 1}. {seg['text']}" for i, seg in enumerate(segments))
+        raw = self._chat(system, numbered)
+
+        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        cleaned = []
+        for line in lines:
+            if line and line[0].isdigit() and ". " in line:
+                cleaned.append(line.split(". ", 1)[1])
+            else:
+                cleaned.append(line)
+
+        if len(cleaned) < len(segments):
+            cleaned += [""] * (len(segments) - len(cleaned))
+
+        return cleaned[: len(segments)]
+
+
+class ClaudeTranslator(TranslatorProvider):
+    """Anthropic Claude API를 사용한 번역 — 최고 품질."""
+
+    def __init__(self):
+        self.model = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
+        self.client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+    def _chat(self, system: str, user: str) -> str:
+        resp = self.client.messages.create(
+            model=self.model,
+            max_tokens=4096,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        return resp.content[0].text.strip()
+
+    def analyze_context(self, full_text: str) -> str:
+        system = (
+            "Analyze the transcript and respond with:\n"
+            "SUMMARY: <one sentence>\n"
+            "GENRE: <genre/style>\n"
+            "TONE: <tone/register>\n"
+            "KEYWORDS: <kw1>, <kw2>, ..."
+        )
+        return self._chat(system, full_text[:4000])
+
+    def translate(self, segments: list[dict], context: str, target_lang: str) -> list[str]:
+        lang_map = {"ko": "Korean", "en": "English", "ja": "Japanese", "zh": "Chinese"}
+        lang_name = lang_map.get(target_lang, target_lang)
+
+        system = (
+            f"You are an expert subtitle translator specializing in {lang_name}. "
+            f"Context:\n{context}\n\n"
+            "Rules:\n"
+            "- Translate all lines as a coherent whole, maintaining context and flow across lines.\n"
+            "- Produce natural, idiomatic translations — NOT literal word-for-word translations.\n"
+            "- Adapt expressions to sound native in the target language.\n"
+            "- Keep subtitle lines concise and readable.\n"
+            "- Preserve the original tone, emotion, and register (formal/informal).\n"
+            "- For Korean: use polite/formal style (합쇼체 or 해요체) by default.\n"
+            "- Output ONLY translated lines, one per line, same order, no extra text."
         )
         numbered = "\n".join(f"{i + 1}. {seg['text']}" for i, seg in enumerate(segments))
         raw = self._chat(system, numbered)
@@ -131,6 +274,10 @@ def get_translator() -> TranslatorProvider:
     provider = os.getenv("TRANSLATOR_PROVIDER", "ollama").lower()
     if provider == "openai":
         return OpenAITranslator()
+    if provider == "gemini":
+        return GeminiTranslator()
+    if provider == "claude":
+        return ClaudeTranslator()
     return OllamaTranslator()
 
 
