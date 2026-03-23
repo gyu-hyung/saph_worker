@@ -35,3 +35,6 @@ checkpoint/
 # Local Storage
 results/
 storage/
+
+.env
+.env.*
