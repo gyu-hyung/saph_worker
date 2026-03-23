@@ -4,6 +4,7 @@ import os
 from abc import ABC, abstractmethod
 from openai import OpenAI
 from anthropic import Anthropic
+from google import genai
 
 
 class TranslatorProvider(ABC):
@@ -150,22 +151,22 @@ class OpenAITranslator(TranslatorProvider):
 
 
 class GeminiTranslator(TranslatorProvider):
-    """Google Gemini API를 사용한 번역 — OpenAI-compatible endpoint 사용."""
+    """Google Gemini API를 사용한 번역 — google-genai SDK 사용."""
 
     def __init__(self):
-        self.model = os.getenv("GEMINI_MODEL", "models/gemini-2.5-flash")
-        self.client = OpenAI(
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            api_key=os.getenv("GEMINI_API_KEY"),
-        )
+        self.model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
     def _chat(self, system: str, user: str) -> str:
-        resp = self.client.chat.completions.create(
+        resp = self.client.models.generate_content(
             model=self.model,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            temperature=0.3,
+            contents=user,
+            config=genai.types.GenerateContentConfig(
+                system_instruction=system,
+                temperature=0.3,
+            ),
         )
-        return resp.choices[0].message.content.strip()
+        return resp.text.strip()
 
     def analyze_context(self, full_text: str) -> str:
         system = (

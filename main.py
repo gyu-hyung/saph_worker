@@ -4,8 +4,14 @@ import json
 import logging
 import os
 import time
+from pathlib import Path
 
+from dotenv import load_dotenv
 import redis
+
+# .env.local 로드 (파일 위치 기준)
+env_path = Path(__file__).parent / '.env.local'
+load_dotenv(env_path)
 
 from pipeline.audio_extractor import extract_audio
 from pipeline.srt_builder import build_all

@@ -2,6 +2,7 @@
 
 import os
 import re
+from typing import Optional
 from faster_whisper import WhisperModel
 
 # 환경 변수로 모델 크기 선택 (GPU: large-v3, CPU: base/medium)
@@ -24,7 +25,7 @@ _CLAUSE_BREAK_BEFORE = {'and', 'but', 'or', 'nor', 'yet', 'so', 'when', 'where',
                         'while', 'because', 'although', 'though', 'if', 'that',
                         'which', 'who', 'whom', 'whose', 'for', 'in', 'with'}
 
-_model: WhisperModel | None = None
+_model: Optional[WhisperModel] = None
 
 
 def _get_model() -> WhisperModel:
