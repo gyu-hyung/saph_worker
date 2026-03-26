@@ -7,6 +7,24 @@ from anthropic import Anthropic
 from google import genai
 
 
+LANG_MAP: dict[str, str] = {
+    "ko": "Korean",
+    "en": "English",
+    "ja": "Japanese",
+    "zh": "Chinese (Simplified)",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "pt": "Portuguese",
+}
+
+LANG_STYLE_HINTS: dict[str, str] = {
+    "ko": "- For Korean: use polite/formal style (합쇼체 or 해요체) by default.\n",
+    "ja": "- For Japanese: use polite style (です/ます form) by default.\n",
+    "de": "- For German: use formal Sie form by default.\n",
+}
+
+
 class TranslatorProvider(ABC):
     @abstractmethod
     def translate(self, segments: list[dict], context: str, target_lang: str) -> list[str]:
@@ -57,8 +75,8 @@ class OllamaTranslator(TranslatorProvider):
 
     def translate(self, segments: list[dict], context: str, target_lang: str) -> list[str]:
         """Pass 2: 문맥 정보를 포함하여 세그먼트를 번역합니다."""
-        lang_map = {"ko": "Korean", "en": "English", "ja": "Japanese", "zh": "Chinese"}
-        lang_name = lang_map.get(target_lang, target_lang)
+        lang_name = LANG_MAP.get(target_lang, target_lang)
+        style_hint = LANG_STYLE_HINTS.get(target_lang, "")
 
         system = (
             f"You are an expert subtitle translator specializing in {lang_name}. "
@@ -69,7 +87,7 @@ class OllamaTranslator(TranslatorProvider):
             "- Adapt expressions to sound native in the target language.\n"
             "- Keep subtitle lines concise and readable.\n"
             "- Preserve the original tone, emotion, and register (formal/informal).\n"
-            "- For Korean: use polite/formal style (합쇼체 or 해요체) by default.\n"
+            f"{style_hint}"
             "- Output ONLY the translated lines, one per line, in the same order.\n"
             "- Do NOT add explanations, numbering, or extra text."
         )
@@ -118,8 +136,8 @@ class OpenAITranslator(TranslatorProvider):
         return self._chat(system, full_text[:4000])
 
     def translate(self, segments: list[dict], context: str, target_lang: str) -> list[str]:
-        lang_map = {"ko": "Korean", "en": "English", "ja": "Japanese", "zh": "Chinese"}
-        lang_name = lang_map.get(target_lang, target_lang)
+        lang_name = LANG_MAP.get(target_lang, target_lang)
+        style_hint = LANG_STYLE_HINTS.get(target_lang, "")
 
         system = (
             f"You are an expert subtitle translator specializing in {lang_name}. "
@@ -130,7 +148,7 @@ class OpenAITranslator(TranslatorProvider):
             "- Adapt expressions to sound native in the target language.\n"
             "- Keep subtitle lines concise and readable.\n"
             "- Preserve the original tone, emotion, and register (formal/informal).\n"
-            "- For Korean: use polite/formal style (합쇼체 or 해요체) by default.\n"
+            f"{style_hint}"
             "- Output ONLY translated lines, one per line, same order, no extra text."
         )
         numbered = "\n".join(f"{i + 1}. {seg['text']}" for i, seg in enumerate(segments))
@@ -179,8 +197,8 @@ class GeminiTranslator(TranslatorProvider):
         return self._chat(system, full_text[:4000])
 
     def translate(self, segments: list[dict], context: str, target_lang: str) -> list[str]:
-        lang_map = {"ko": "Korean", "en": "English", "ja": "Japanese", "zh": "Chinese"}
-        lang_name = lang_map.get(target_lang, target_lang)
+        lang_name = LANG_MAP.get(target_lang, target_lang)
+        style_hint = LANG_STYLE_HINTS.get(target_lang, "")
 
         system = (
             f"You are an expert subtitle translator specializing in {lang_name}. "
@@ -191,7 +209,7 @@ class GeminiTranslator(TranslatorProvider):
             "- Adapt expressions to sound native in the target language.\n"
             "- Keep subtitle lines concise and readable.\n"
             "- Preserve the original tone, emotion, and register (formal/informal).\n"
-            "- For Korean: use polite/formal style (합쇼체 or 해요체) by default.\n"
+            f"{style_hint}"
             "- Output ONLY translated lines, one per line, same order, no extra text."
         )
         numbered = "\n".join(f"{i + 1}. {seg['text']}" for i, seg in enumerate(segments))
@@ -238,8 +256,8 @@ class ClaudeTranslator(TranslatorProvider):
         return self._chat(system, full_text[:4000])
 
     def translate(self, segments: list[dict], context: str, target_lang: str) -> list[str]:
-        lang_map = {"ko": "Korean", "en": "English", "ja": "Japanese", "zh": "Chinese"}
-        lang_name = lang_map.get(target_lang, target_lang)
+        lang_name = LANG_MAP.get(target_lang, target_lang)
+        style_hint = LANG_STYLE_HINTS.get(target_lang, "")
 
         system = (
             f"You are an expert subtitle translator specializing in {lang_name}. "
@@ -250,7 +268,7 @@ class ClaudeTranslator(TranslatorProvider):
             "- Adapt expressions to sound native in the target language.\n"
             "- Keep subtitle lines concise and readable.\n"
             "- Preserve the original tone, emotion, and register (formal/informal).\n"
-            "- For Korean: use polite/formal style (합쇼체 or 해요체) by default.\n"
+            f"{style_hint}"
             "- Output ONLY translated lines, one per line, same order, no extra text."
         )
         numbered = "\n".join(f"{i + 1}. {seg['text']}" for i, seg in enumerate(segments))
